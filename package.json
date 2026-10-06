@@ -1,0 +1,33 @@
+{
+  "name": "@canhelpto/mcp-support",
+  "version": "0.1.0",
+  "description": "Customer support inside your MCP server: support_ask, support_open_ticket and support_ticket_status, with the failed calls attached. By canhelpto.com.",
+  "license": "MIT",
+  "author": "MVPHub LLC <hello@canhelpto.com>",
+  "homepage": "https://canhelpto.com/install.md?utm_source=npm",
+  "repository": { "type": "git", "url": "git+https://github.com/mvphubco/canhelpto-mcp-support.git" },
+  "keywords": ["mcp", "model-context-protocol", "customer-support", "helpdesk", "claude", "cursor", "chatgpt", "tickets"],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "zod": "^4.1.0"
+  },
+  "engines": { "node": ">=18" }
+}
