@@ -74,7 +74,7 @@ test("a failing tool gets the support hint, and the call is recorded for the tic
   assert.match(calls[1].error, /sender_domain_not_verified/);
   assert.equal(post.body.metadata.mcp.account.userId, "u_1");
   assert.equal(post.body.customerEmail, "maria@northwind.com");
-  assert.match(post.body.message, /^Sending INV-1042 fails\.\n\n— Connector context \(attached by Acme Invoices's MCP support\) —/);
+  assert.match(post.body.message, /^Sending INV-1042 fails\.\n\n- Connector context \(attached by Acme Invoices's MCP support\) -/);
   assert.ok(post.body.tags.includes("mcp"));
   assert.equal(post.body.page, "mcp://acme-invoices");
 });
@@ -103,5 +103,5 @@ test("pure helpers: rules match words or patterns; the context block reads like 
   assert.equal(answerFromRules("rate limit hit", [{ match: /rate.?limit/i, answer: "Wait 60 s." }])?.answer, "Wait 60 s.");
   assert.equal(answerFromRules("hello", [{ match: ["billing"], answer: "x" }]), null);
   const block = renderContext("Acme", { account: { userId: "u_1", fullName: "Maria" }, client: { userAgent: "claude-ai/1.0" }, recentCalls: [{ tool: "send_invoice", at: "2026-10-06T16:05:00.000Z", ms: 120, ok: false, error: "403" }] });
-  assert.match(block, /^— Connector context \(attached by Acme's MCP support\) —\nAccount: Maria · u_1\nClient: claude-ai\/1\.0\nLast calls \(newest first\):\n- 16:05:00 send_invoice · 120 ms · 403$/);
+  assert.match(block, /^- Connector context \(attached by Acme's MCP support\) -\nAccount: Maria · u_1\nClient: claude-ai\/1\.0\nLast calls \(newest first\):\n- 16:05:00 send_invoice · 120 ms · 403$/);
 });

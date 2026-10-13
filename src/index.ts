@@ -49,7 +49,7 @@ export function answerFromRules(question: string, rules: SupportRule[] = []): Su
 export function renderContext(product: string, ctx: { account: Record<string, unknown>; client: Record<string, unknown>; recentCalls: RecentCall[] }): string {
   const who = [ctx.account.fullName, ctx.account.email, ctx.account.userId].filter(Boolean).join(" · ");
   const client = [ctx.client.userAgent, ctx.client.catalogue && `catalogue ${ctx.client.catalogue}`].filter(Boolean).join(" · ");
-  const lines = [`— Connector context (attached by ${product}'s MCP support) —`, `Account: ${who || "unknown"}`];
+  const lines = [`- Connector context (attached by ${product}'s MCP support) -`, `Account: ${who || "unknown"}`];
   if (client) lines.push(`Client: ${client}`);
   if (ctx.recentCalls.length) {
     lines.push("Last calls (newest first):");
