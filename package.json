@@ -1,9 +1,9 @@
 {
-  "name": "@canhelpto/mcp-support",
+  "name": "@canhelpto-com/mcp-support",
   "version": "0.1.0",
   "description": "Customer support inside your MCP server: support_ask, support_open_ticket and support_ticket_status, with the failed calls attached. By canhelpto.com.",
   "license": "MIT",
-  "author": "MVPHub LLC <hello@canhelpto.com>",
+  "author": "MVPHub LLC <canhelpto@canhelpto.com>",
   "homepage": "https://canhelpto.com/install.md?utm_source=npm",
   "repository": { "type": "git", "url": "git+https://github.com/mvphubco/canhelpto-mcp-support.git" },
   "keywords": ["mcp", "model-context-protocol", "customer-support", "helpdesk", "claude", "cursor", "chatgpt", "tickets"],

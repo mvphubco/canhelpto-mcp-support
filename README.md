@@ -1,4 +1,4 @@
-# @canhelpto/mcp-support
+# @canhelpto-com/mcp-support
 
 Customer support inside your MCP server. Your users are in Claude, ChatGPT and Cursor now; when one of your tools fails there, they have no help button. This package adds one.
 
@@ -7,7 +7,7 @@ Customer support inside your MCP server. Your users are in Claude, ChatGPT and C
 - `support_ticket_status` brings your team's answer back into the user's chat.
 - Every tool you register after it is timed and recorded, and its errors carry a hint that tells the agent where to turn.
 
-Tickets land in your [canhelpto](https://canhelpto.com/?utm_source=github) inbox with the failed call shown next to the customer's words. Your team answers there or from its own agent. Free for one workspace.
+Tickets land in your [canhelpto](https://canhelpto.com/?utm_source=mcp-support-readme) inbox with the failed call shown next to the customer's words. Your team answers there or from its own agent. Free for one workspace.
 
 ## Install with one prompt
 
@@ -20,13 +20,12 @@ It reads your server, adds the package, wires the user lookup and opens a test t
 ## Install by hand
 
 ```bash
-npm install @canhelpto/mcp-support
-# until the npm release: npm install github:mvphubco/canhelpto-mcp-support
+npm install @canhelpto-com/mcp-support
 ```
 
 ```ts
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { withSupport } from "@canhelpto/mcp-support";
+import { withSupport } from "@canhelpto-com/mcp-support";
 
 const server = new McpServer({ name: "acme", version: "1.0.0" });
 
