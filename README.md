@@ -64,3 +64,7 @@ The ticket carries the account fields you return from `user()`, the client field
 ## License
 
 MIT, MVPHub LLC.
+
+## Demo server
+
+`demo/` is a runnable example: a made-up "Acme Invoices" server with support mounted (`create_invoice` fails on purpose for currencies other than EUR and USD). Run it over stdio with `npx tsx demo/server.ts`, or `docker build -t canhelpto-demo . && docker run -i canhelpto-demo`. Set `CANHELPTO_API_KEY` to file real tickets in your workspace.

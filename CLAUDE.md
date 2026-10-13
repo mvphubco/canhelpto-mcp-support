@@ -18,5 +18,6 @@ npm: `@canhelpto-com/mcp-support`, org `canhelpto-com` owned by the npm user `mv
 
 ## Recent changes
 
+- 2026-10-13: **Demo server + Dockerfile (operator: awesome-mcp-servers needs a passing Glama check).** `demo/build.ts` (`buildDemoServer`: made-up Acme Invoices, `list_invoices`, `create_invoice` failing on non-EUR/USD, `withSupport` with two rules), `demo/server.ts` (stdio), `Dockerfile` (node:22-slim, `npx tsx demo/server.ts`). Not in the npm tarball. Test: `demo-server`.
 - 2026-10-13: **Published name `@canhelpto-com/mcp-support` (operator).** The npm name `canhelpto` belongs to a user account registered with a misspelled email; the org `canhelpto-com` was created instead. Author contact canhelpto@canhelpto.com (hello@ never existed); README links tagged `utm_source=mcp-support-readme`, homepage `utm_source=npm`; the GitHub-install fallback line is gone. Guard: `test/package-identity.test.ts`.
 - 2026-10-13: **No em dash (operator).** The connector-context header the library writes into every ticket used em dashes; it now uses hyphens (canhelpto parses both). Guard: `test/no-em-dash.test.ts`.
