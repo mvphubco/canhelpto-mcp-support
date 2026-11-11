@@ -15,10 +15,10 @@ async function connect(env: Record<string, string | undefined> = {}) {
 }
 const text = (r: any) => (r.content ?? []).map((c: any) => c.text).join("\n");
 
-test("the demo server answers introspection with its tools and the three support tools", async () => {
+test("the demo server answers introspection with its tools and the five support tools", async () => {
   const client = await connect();
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["create_invoice", "list_invoices", "support_ask", "support_open_ticket", "support_ticket_status"]);
+  assert.deepEqual(names, ["create_invoice", "list_invoices", "support_ask", "support_open_ticket", "support_reply_to_ticket", "support_set_ticket_status", "support_ticket_status"]);
   for (const t of (await client.listTools()).tools.filter((t) => !t.name.startsWith("support_"))) {
     assert.ok(t.title, `${t.name} has a title`);
     assert.equal(typeof t.annotations?.readOnlyHint, "boolean");

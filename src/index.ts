@@ -8,7 +8,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
  *   withSupport(server, { apiKey: process.env.CANHELPTO_API_KEY!, product: "Acme", user: (extra) => myUser(extra) });
  *   // then register your own tools as usual
  *
- * Adds support_ask, support_open_ticket and support_ticket_status, records the
+ * Adds support_ask, support_open_ticket, support_ticket_status,
+ * support_reply_to_ticket and support_set_ticket_status, records the
  * last calls of every tool registered after it, and appends a support hint to
  * every tool error, so the agent knows where to turn when your tool fails.
  */
@@ -111,6 +112,16 @@ export function withSupport(server: McpServer, opts: SupportOptions) {
     });
   };
 
+  // Customer-mode calls: never X-Service-Mode, so internal notes stay out and a
+  // reply counts as the customer's (it reopens a closed ticket, notifies the team).
+  const readHeaders = { "X-API-Key": opts.apiKey, "User-Agent": "canhelpto-mcp-support/0.2" };
+  const mine = (t: any, u: SupportAccount) => t?.metadata?.mcp?.account?.userId === u.id || (!!u.email && t?.customerEmail === u.email);
+  const ownTicket = async (ticketId: string, u: SupportAccount): Promise<any | null> => {
+    const r = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}`, { headers: readHeaders });
+    const t: any = r.ok ? await r.json() : null;
+    return t && mine(t, u) ? t : null;
+  };
+
   original("support_ask", {
     title: `Ask ${opts.product} support`,
     description: `Help with ${opts.product} itself (errors, limits, account, how-to). Answers from what the ${opts.product} team wrote; if it has no answer it says so and points to support_open_ticket.`,
@@ -140,7 +151,7 @@ export function withSupport(server: McpServer, opts: SupportOptions) {
     const ctx = { account, client, recentCalls: recent.get(id) ?? [] };
     const res = await doFetch(`${base}/api/v1/tickets`, {
       method: "POST",
-      headers: { "X-API-Key": opts.apiKey, "X-Service-Mode": "true", "Content-Type": "application/json", "User-Agent": "canhelpto-mcp-support/0.1" },
+      headers: { "X-API-Key": opts.apiKey, "X-Service-Mode": "true", "Content-Type": "application/json", "User-Agent": "canhelpto-mcp-support/0.2" },
       body: JSON.stringify({
         summary: input.subject,
         message: `${input.message}\n\n${renderContext(opts.product, ctx)}`,
@@ -166,21 +177,58 @@ export function withSupport(server: McpServer, opts: SupportOptions) {
   }, async ({ ticketId }: { ticketId?: string }, extra: unknown) => {
     const u = await who(extra);
     if (!u) return text("Sign in first: tickets are tied to your account.", true);
-    // Reads never send X-Service-Mode, so the team's internal notes stay out.
-    const headers = { "X-API-Key": opts.apiKey, "User-Agent": "canhelpto-mcp-support/0.1" };
-    const mine = (t: any) => t?.metadata?.mcp?.account?.userId === u.id || (!!u.email && t?.customerEmail === u.email);
     if (ticketId) {
-      const r = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}`, { headers });
-      const t: any = r.ok ? await r.json() : null;
-      if (!t || !mine(t)) return text(`Ticket ${ticketId} was not found on your account.`, true);
+      const t = await ownTicket(ticketId, u);
+      if (!t) return text(`Ticket ${ticketId} was not found on your account.`, true);
       const replies = (t.replies ?? []).filter((x: any) => !x.isInternal && x.userId).map((x: any) => `- ${x.message}`);
       return text([`${t.id} · ${t.status} · ${t.summary ?? ""}`, replies.length ? `Replies from the team:\n${replies.join("\n")}` : "No reply from the team yet."].join("\n"));
     }
     if (!u.email) return text("Give a ticketId: your account has no email to list tickets by.", true);
-    const r = await doFetch(`${base}/api/v1/tickets?email=${encodeURIComponent(u.email)}&limit=10`, { headers });
+    const r = await doFetch(`${base}/api/v1/tickets?email=${encodeURIComponent(u.email)}&limit=10`, { headers: readHeaders });
     const list: any[] = r.ok ? (((await r.json()) as { tickets?: any[] }).tickets ?? []) : [];
-    const own = list.filter(mine);
+    const own = list.filter((t) => mine(t, u));
     return text(own.length ? own.map((t) => `${t.id} · ${t.status} · ${t.summary ?? ""}`).join("\n") : "No support tickets on your account.");
+  });
+
+  original("support_reply_to_ticket", {
+    title: `Reply on a ${opts.product} ticket`,
+    description: `Add a message to one of your ${opts.product} support tickets: more details, or an answer to the team's question. A reply on a resolved or closed ticket reopens it. Confirm the text with the user first.`,
+    inputSchema: { ticketId: z.string().min(1).max(64), message: z.string().min(1).max(4000) },
+  }, async ({ ticketId, message }: { ticketId: string; message: string }, extra: unknown) => {
+    const u = await who(extra);
+    if (!u) return text("Sign in first: tickets are tied to your account.", true);
+    const t = await ownTicket(ticketId, u);
+    if (!t) return text(`Ticket ${ticketId} was not found on your account.`, true);
+    const email = t.customerEmail ?? u.email;
+    if (!email) return text(`Ticket ${ticketId} has no email to reply as; open a new ticket instead.`, true);
+    const res = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}/replies`, {
+      method: "POST",
+      headers: { ...readHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, message: message.trim() }),
+    });
+    if (!res.ok) return text(`The reply could not be added (HTTP ${res.status}). Try again in a minute.`, true);
+    const reopened = t.status === "RESOLVED" || t.status === "CLOSED";
+    return text(`Added to ticket ${ticketId}; the ${opts.product} team is notified.${reopened ? " The ticket is open again." : ""}`);
+  });
+
+  original("support_set_ticket_status", {
+    title: `Close or reopen a ${opts.product} ticket`,
+    description: `Close one of your ${opts.product} support tickets when the problem is solved (CLOSED), or reopen it when it is back (OPEN). Confirm with the user first.`,
+    inputSchema: { ticketId: z.string().min(1).max(64), status: z.enum(["OPEN", "CLOSED"]) },
+  }, async ({ ticketId, status }: { ticketId: string; status: "OPEN" | "CLOSED" }, extra: unknown) => {
+    const u = await who(extra);
+    if (!u) return text("Sign in first: tickets are tied to your account.", true);
+    const t = await ownTicket(ticketId, u);
+    if (!t) return text(`Ticket ${ticketId} was not found on your account.`, true);
+    const email = t.customerEmail ?? u.email;
+    if (!email) return text(`Ticket ${ticketId} has no email on it, so it cannot be changed from here.`, true);
+    const res = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}/status`, {
+      method: "PATCH",
+      headers: { ...readHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, status }),
+    });
+    if (!res.ok) return text(`The ticket could not be changed (HTTP ${res.status}). Try again in a minute.`, true);
+    return text(status === "CLOSED" ? `Ticket ${ticketId} is closed.` : `Ticket ${ticketId} is open again; the ${opts.product} team sees it in the inbox.`);
   });
 
   return { recentCalls: (userId: string) => [...(recent.get(userId) ?? [])] };

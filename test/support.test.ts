@@ -15,6 +15,8 @@ function fakeApi(tickets: Record<string, any> = {}) {
     const headers = Object.fromEntries(Object.entries((init.headers as Record<string, string>) ?? {}));
     const body = init.body ? JSON.parse(String(init.body)) : null;
     calls.push({ url: u, method: init.method ?? "GET", headers, body });
+    if (init.method === "POST" && u.endsWith("/replies")) return new Response(JSON.stringify({ success: true, reply: { id: "r_1" } }), { status: 201 });
+    if (init.method === "PATCH") return new Response(JSON.stringify({ success: true, status: body.status }), { status: 200 });
     if (init.method === "POST") return new Response(JSON.stringify({ success: true, ticket: { id: "t_1", status: "OPEN" } }), { status: 201 });
     const id = u.match(/tickets\/([^?]+)$/)?.[1];
     if (id && tickets[id]) return new Response(JSON.stringify(tickets[id]), { status: 200 });
@@ -50,11 +52,11 @@ function build(api = fakeApi()) {
   return { server, api };
 }
 
-test("adds the three support tools next to the vendor's own", async () => {
+test("adds the five support tools next to the vendor's own", async () => {
   const { server } = build();
   const client = await connect(server);
   const names = (await client.listTools()).tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["list_invoices", "send_invoice", "support_ask", "support_open_ticket", "support_ticket_status"]);
+  assert.deepEqual(names, ["list_invoices", "send_invoice", "support_ask", "support_open_ticket", "support_reply_to_ticket", "support_set_ticket_status", "support_ticket_status"]);
 });
 
 test("a failing tool gets the support hint, and the call is recorded for the ticket", async () => {
@@ -97,6 +99,45 @@ test("support_ticket_status shows only the caller's own ticket", async () => {
   assert.match(text(await client.callTool({ name: "support_ticket_status", arguments: { ticketId: "t_2" } })), /not found/i);
   const reads = api.calls.filter((c) => c.method === "GET");
   assert.ok(reads.every((c) => !("X-Service-Mode" in c.headers)), "reads never use service mode (internal notes stay out)");
+});
+
+// 2026-11-11 (operator): a user in Claude could open a ticket and read the answer, but
+// not answer back, close it when solved or reopen it.
+test("support_reply_to_ticket adds the customer's reply as the customer, only on their own ticket", async () => {
+  const api = fakeApi({
+    t_1: { id: "t_1", status: "RESOLVED", summary: "Cannot send", customerEmail: "maria@northwind.com", metadata: { mcp: { account: { userId: "u_1" } } }, replies: [] },
+    t_2: { id: "t_2", status: "OPEN", summary: "Someone else", customerEmail: "other@x.com", metadata: { mcp: { account: { userId: "u_9" } } }, replies: [] },
+  });
+  const { server } = build(api);
+  const client = await connect(server);
+  const ok = await client.callTool({ name: "support_reply_to_ticket", arguments: { ticketId: "t_1", message: " It fails again since this morning. " } });
+  assert.match(text(ok), /Added to ticket t_1[\s\S]*open again/);
+  const post = api.calls.find((c) => c.method === "POST")!;
+  assert.equal(post.url, "https://canhelpto.com/api/v1/tickets/t_1/replies");
+  assert.deepEqual(post.body, { email: "maria@northwind.com", message: "It fails again since this morning." });
+  assert.ok(!("X-Service-Mode" in post.headers), "a customer reply never uses service mode");
+  const denied = await client.callTool({ name: "support_reply_to_ticket", arguments: { ticketId: "t_2", message: "hi" } });
+  assert.equal((denied as any).isError, true);
+  assert.equal(api.calls.filter((c) => c.method === "POST").length, 1, "nothing is posted on someone else's ticket");
+});
+
+test("support_set_ticket_status closes or reopens the caller's own ticket, nothing else", async () => {
+  const api = fakeApi({
+    t_1: { id: "t_1", status: "IN_PROGRESS", summary: "Cannot send", customerEmail: "maria@northwind.com", metadata: { mcp: { account: { userId: "u_1" } } }, replies: [] },
+    t_2: { id: "t_2", status: "OPEN", summary: "Someone else", customerEmail: "other@x.com", metadata: { mcp: { account: { userId: "u_9" } } }, replies: [] },
+  });
+  const { server } = build(api);
+  const client = await connect(server);
+  assert.match(text(await client.callTool({ name: "support_set_ticket_status", arguments: { ticketId: "t_1", status: "CLOSED" } })), /t_1 is closed/);
+  assert.match(text(await client.callTool({ name: "support_set_ticket_status", arguments: { ticketId: "t_1", status: "OPEN" } })), /open again/);
+  const patches = api.calls.filter((c) => c.method === "PATCH");
+  assert.deepEqual(patches.map((c) => [c.url, c.body.status, c.body.email]), [
+    ["https://canhelpto.com/api/v1/tickets/t_1/status", "CLOSED", "maria@northwind.com"],
+    ["https://canhelpto.com/api/v1/tickets/t_1/status", "OPEN", "maria@northwind.com"],
+  ]);
+  assert.equal((await client.callTool({ name: "support_set_ticket_status", arguments: { ticketId: "t_2", status: "CLOSED" } }) as any).isError, true);
+  assert.equal((await client.callTool({ name: "support_set_ticket_status", arguments: { ticketId: "t_1", status: "RESOLVED" } }) as any).isError, true);
+  assert.equal(api.calls.filter((c) => c.method === "PATCH").length, 2);
 });
 
 test("pure helpers: rules match words or patterns; the context block reads like the inbox expects", () => {

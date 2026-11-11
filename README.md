@@ -5,6 +5,8 @@ Customer support inside your MCP server. Your users are in Claude, ChatGPT and C
 - `support_ask` answers from your own rules (no model call, never invented).
 - `support_open_ticket` opens a ticket with the account, the client and the last tool calls attached, errors included.
 - `support_ticket_status` brings your team's answer back into the user's chat.
+- `support_reply_to_ticket` lets the user answer the team or add details on their own ticket (a reply on a closed ticket reopens it).
+- `support_set_ticket_status` lets the user close their ticket when it is solved, or reopen it.
 - Every tool you register after it is timed and recorded, and its errors carry a hint that tells the agent where to turn.
 
 Tickets land in your [canhelpto](https://canhelpto.com/?utm_source=mcp-support-readme) inbox with the failed call shown next to the customer's words. Your team answers there or from its own agent. Free for one workspace.
