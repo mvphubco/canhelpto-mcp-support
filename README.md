@@ -54,10 +54,27 @@ Call `withSupport` before registering your own tools: those registered after it 
 | `apiKey` | Workspace service key (`chs_...`). Server-side only. |
 | `product` | Your product's name, used in tool descriptions and the ticket. |
 | `user(extra)` | Returns the calling account, or null. `extra` is the MCP request context (`authInfo`, session). |
-| `rules` | Answers for `support_ask`, matched on words or a pattern. |
+| `rules` | Answers for `support_ask`, matched on words or a pattern; an answer can be a function of the account. |
+| `tags`, `page` | Extra ticket tags next to `mcp` and the category; the ticket's page (default `mcp://<product>`). |
 | `client(extra)` | What the caller runs (`userAgent`, your catalogue version). |
 | `keep` | Calls kept per user. Default 12. |
 | `baseUrl`, `fetch` | For tests and self-hosting. |
+
+## Your own registration loop
+
+A server that registers its tools in its own loop (role-shaped catalogues, its own call recording) uses the same engine without the wrapper:
+
+```ts
+import { createSupport, supportTools } from "@canhelpto-com/mcp-support";
+
+const support = createSupport({ apiKey: process.env.CANHELPTO_API_KEY!, product: "Acme", rules });
+for (const t of supportTools("Acme")) {
+  // register t.name with t.title, t.description, t.inputSchema (a zod shape) and t.readOnly
+  // handler: (args) => support.call(t.name, args, account, { userAgent }) -> { text, isError }
+}
+// after each of your own tool calls:
+support.record(account.id, { tool, at: new Date().toISOString(), ms, ok, error });
+```
 
 ## Privacy
 

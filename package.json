@@ -1,6 +1,6 @@
 {
   "name": "@canhelpto-com/mcp-support",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Customer support inside your MCP server: support_ask, support_open_ticket, support_ticket_status, support_reply_to_ticket and support_set_ticket_status, with the failed calls attached. By canhelpto.com.",
   "license": "MIT",
   "author": "MVPHub LLC <canhelpto@canhelpto.com>",
