@@ -127,7 +127,8 @@ export interface SupportEngine<A extends SupportAccount = SupportAccount> {
 
 export function createSupport<A extends SupportAccount>(opts: SupportEngineOptions<A>): SupportEngine<A> {
   const base = (opts.baseUrl ?? "https://canhelpto.com").replace(/\/$/, "");
-  const doFetch = opts.fetch ?? fetch;
+  // Looked up on each call, so a fetch installed after the engine (a polyfill, a test stub) is used.
+  const doFetch: typeof fetch = (input, init) => (opts.fetch ?? fetch)(input, init);
   const keep = opts.keep ?? 12;
   const recent = new Map<string, RecentCall[]>();
   const product = opts.product;

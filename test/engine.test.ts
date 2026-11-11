@@ -56,3 +56,16 @@ test("bad input and a missing account are errors, and nothing is sent", async ()
   assert.match((await s.call("support_open_ticket", { subject: "abc", message: "abc" }, null)).text, /Sign in first/);
   assert.equal(calls.length, 0);
 });
+
+test("fetch is looked up on each call, so a stub installed after the engine is used", async () => {
+  const s = createSupport<Acct>({ apiKey: "chs_x", product: "Gigi" });
+  const real = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: string) => { seen.push(String(url)); return new Response(JSON.stringify({ ticket: { id: "t_1" } }), { status: 201 }); }) as unknown as typeof fetch;
+  try {
+    await s.call("support_open_ticket", { subject: "abc", message: "abc" }, maria);
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.deepEqual(seen, ["https://canhelpto.com/api/v1/tickets"]);
+});
