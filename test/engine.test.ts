@@ -35,14 +35,16 @@ test("support_ask answers from a rule shaped to the account and lists the accoun
   assert.equal(s.recentCalls("u_1").length, 1, "support tools are never recorded");
 });
 
-test("a ticket carries the app's tags and page, the recorded calls and the client", async () => {
+test("a ticket carries its type and page, the recorded calls and the client; no tags", async () => {
   const { calls, fetchImpl } = api();
   const s = createSupport<Acct>({ apiKey: "chs_x", product: "Gigi", tags: ["claude-connector"], page: "mcp://gigi", fetch: fetchImpl });
   s.record("u_1", { tool: "list_drafts", at: "2026-11-11T10:00:00.000Z", ms: 12, ok: true });
   const r = await s.call("support_open_ticket", { subject: "Drafts fail", message: "Approving fails." }, maria, { userAgent: "claude-user/1.0", catalogue: "1.17.0" });
   assert.match(r.text, /Ticket t_9 is with the Gigi team/);
   const b = calls[0]!.body;
-  assert.deepEqual(b.tags, ["mcp", "claude-connector", "question"]);
+  assert.equal(b.tags, undefined);
+  assert.equal(b.type, "issue");
+  assert.equal(b.category, undefined);
   assert.equal(b.page, "mcp://gigi");
   assert.equal(b.metadata.mcp.account.team, "member");
   assert.equal(b.metadata.mcp.client.catalogue, "1.17.0");

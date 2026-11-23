@@ -34,7 +34,7 @@ export interface SupportEngineOptions<A extends SupportAccount = SupportAccount>
   product: string;
   /** Answers support_ask gives without a ticket. Matched on words or a pattern; never a model call. */
   rules?: SupportRule<A>[];
-  /** Tags added to every ticket next to "mcp" and the category. */
+  /** @deprecated canhelpto keeps only its standard tags since 2026-11-23; Source MCP marks connector tickets. Ignored. */
   tags?: string[];
   /** The ticket's page. Default mcp://<product slug>. */
   page?: string;
@@ -77,7 +77,7 @@ export const supportInputShapes: Record<SupportToolName, Record<string, any>> = 
     subject: z.string().min(3).max(160).describe("One line the team reads in their inbox"),
     message: z.string().min(3).max(4000).describe("What the user wants, in their words, plus what was tried. The account and the last tool calls are attached; do not repeat them."),
     priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM"),
-    category: z.enum(["bug", "question", "billing", "account", "feature"]).default("question"),
+    type: z.enum(["issue", "feature"]).default("issue").describe("feature = asks for something the product does not do yet; issue = everything else (a problem, a question, billing, account)"),
   },
   support_ticket_status: { ticketId: z.string().max(64).optional().describe("The id support_open_ticket returned. Omit for the account's recent tickets.") },
   support_reply_to_ticket: {
@@ -223,10 +223,9 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
           summary: input.subject.trim(),
           message: `${input.message.trim()}\n\n${renderContext(product, ctx)}`,
           priority: input.priority,
-          category: input.category,
+          type: input.type,
           customerName: name ?? undefined,
           customerEmail: email ?? undefined,
-          tags: ["mcp", ...(opts.tags ?? []), input.category],
           page: opts.page ?? `mcp://${slug(product)}`,
           metadata: { mcp: ctx },
         }),
@@ -243,6 +242,8 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
         if (!found) return notFound(ticketId, u);
         const { t, own } = found;
         const who = (x: any) => {
+          // canhelpto names every team reply since 2026-11-23 (a person, Marco, an API caller).
+          if (x.author) return `${x.author} (${product} team)`;
           if (x.userId) return `${product} team`;
           if (x.isAI) return "automatic";
           const author = String(x.message ?? "").match(AUTHOR_LINE)?.[1];

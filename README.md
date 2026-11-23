@@ -56,7 +56,7 @@ Call `withSupport` before registering your own tools: those registered after it 
 | `product` | Your product's name, used in tool descriptions and the ticket. |
 | `user(extra)` | Returns the calling account, or null. `extra` is the MCP request context (`authInfo`, session). |
 | `rules` | Answers for `support_ask`, matched on words or a pattern; an answer can be a function of the account. |
-| `tags`, `page` | Extra ticket tags next to `mcp` and the category; the ticket's page (default `mcp://<product>`). |
+| `page` | The ticket's page (default `mcp://<product>`). `tags` is ignored since 0.5.0: canhelpto marks connector tickets with Source MCP. |
 | `client(extra)` | What the caller runs (`userAgent`, your catalogue version). |
 | `canSeeAllTickets(account)` | True for your own team (e.g. admins). They get `support_list_tickets` and can read, answer, close and reopen any ticket of the workspace; a reply on someone else's ticket is posted as a team reply starting "From <name> (<email>), <product> team:", never as the ticket's customer, and no email is sent. Internal notes stay hidden. Default: nobody. |
 | `keep` | Calls kept per user. Default 12. |

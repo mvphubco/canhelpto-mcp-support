@@ -77,7 +77,8 @@ test("a failing tool gets the support hint, and the call is recorded for the tic
   assert.equal(post.body.metadata.mcp.account.userId, "u_1");
   assert.equal(post.body.customerEmail, "maria@northwind.com");
   assert.match(post.body.message, /^Sending INV-1042 fails\.\n\n- Connector context \(attached by Acme Invoices's MCP support\) -/);
-  assert.ok(post.body.tags.includes("mcp"));
+  assert.equal(post.body.tags, undefined);
+  assert.equal(post.body.type, "issue");
   assert.equal(post.body.page, "mcp://acme-invoices");
 });
 
@@ -90,12 +91,15 @@ test("support_ask answers from the vendor's rules, never invents, and points to 
 
 test("support_ticket_status shows only the caller's own ticket", async () => {
   const api = fakeApi({
-    t_1: { id: "t_1", status: "IN_PROGRESS", summary: "Cannot send", metadata: { mcp: { account: { userId: "u_1" } } }, replies: [{ message: "Add the two DNS records.", userId: "staff", isInternal: false }] },
+    t_1: { id: "t_1", status: "IN_PROGRESS", summary: "Cannot send", metadata: { mcp: { account: { userId: "u_1" } } }, replies: [{ message: "Add the two DNS records.", userId: "staff", isInternal: false }, { message: "Records verified.", userId: null, author: "Marco", isInternal: false }] },
     t_2: { id: "t_2", status: "OPEN", summary: "Someone else", customerEmail: "other@x.com", metadata: { mcp: { account: { userId: "u_9" } } }, replies: [] },
   });
   const { server } = build(api);
   const client = await connect(server);
-  assert.match(text(await client.callTool({ name: "support_ticket_status", arguments: { ticketId: "t_1" } })), /IN_PROGRESS[\s\S]*Add the two DNS records/);
+  const t1 = text(await client.callTool({ name: "support_ticket_status", arguments: { ticketId: "t_1" } }));
+  assert.match(t1, /IN_PROGRESS[\s\S]*Add the two DNS records/);
+  // An API reply has no userId but canhelpto names it (2026-11-23): never shown as "you".
+  assert.match(t1, /Marco \(.+ team\): Records verified\./);
   assert.match(text(await client.callTool({ name: "support_ticket_status", arguments: { ticketId: "t_2" } })), /not found/i);
   const reads = api.calls.filter((c) => c.method === "GET");
   assert.ok(reads.every((c) => !("X-Service-Mode" in c.headers)), "reads never use service mode (internal notes stay out)");
