@@ -7,6 +7,7 @@ Customer support inside your MCP server. Your users are in Claude, ChatGPT and C
 - `support_ticket_status` brings your team's answer back into the user's chat.
 - `support_reply_to_ticket` lets the user answer the team or add details on their own ticket (a reply on a closed ticket reopens it).
 - `support_set_ticket_status` lets the user close their ticket when it is solved, or reopen it.
+- `support_list_tickets` (only for your own team, see `canSeeAllTickets`) lists every ticket of the workspace; your team can then read, answer and reopen any of them from the chat.
 - Every tool you register after it is timed and recorded, and its errors carry a hint that tells the agent where to turn.
 
 Tickets land in your [canhelpto](https://canhelpto.com/?utm_source=mcp-support-readme) inbox with the failed call shown next to the customer's words. Your team answers there or from its own agent. Free for one workspace.
@@ -57,6 +58,7 @@ Call `withSupport` before registering your own tools: those registered after it 
 | `rules` | Answers for `support_ask`, matched on words or a pattern; an answer can be a function of the account. |
 | `tags`, `page` | Extra ticket tags next to `mcp` and the category; the ticket's page (default `mcp://<product>`). |
 | `client(extra)` | What the caller runs (`userAgent`, your catalogue version). |
+| `canSeeAllTickets(account)` | True for your own team (e.g. admins). They get `support_list_tickets` and can read, answer, close and reopen any ticket of the workspace; a reply on someone else's ticket is posted as a team reply starting "From <name> (<email>), <product> team:", never as the ticket's customer, and no email is sent. Internal notes stay hidden. Default: nobody. |
 | `keep` | Calls kept per user. Default 12. |
 | `baseUrl`, `fetch` | For tests and self-hosting. |
 
@@ -67,8 +69,8 @@ A server that registers its tools in its own loop (role-shaped catalogues, its o
 ```ts
 import { createSupport, supportTools } from "@canhelpto-com/mcp-support";
 
-const support = createSupport({ apiKey: process.env.CANHELPTO_API_KEY!, product: "Acme", rules });
-for (const t of supportTools("Acme")) {
+const support = createSupport({ apiKey: process.env.CANHELPTO_API_KEY!, product: "Acme", rules, canSeeAllTickets: (a) => isAdmin(a) });
+for (const t of supportTools("Acme", { team: isAdmin(account) })) {   // { team: true } adds support_list_tickets
   // register t.name with t.title, t.description, t.inputSchema (a zod shape) and t.readOnly
   // handler: (args) => support.call(t.name, args, account, { userAgent }) -> { text, isError }
 }
@@ -78,7 +80,7 @@ support.record(account.id, { tool, at: new Date().toISOString(), ms, ok, error }
 
 ## Privacy
 
-The ticket carries the account fields you return from `user()`, the client fields, and the names, times, durations and error messages of the last calls. Tool arguments and results are never sent. Reads never use service mode, so your team's internal notes stay out of the chat, and a user only sees tickets on their own account.
+The ticket carries the account fields you return from `user()`, the client fields, and the names, times, durations and error messages of the last calls. Tool arguments and results are never sent. Reads never use service mode, so your team's internal notes stay out of the chat, and a user only sees tickets on their own account (your team, with `canSeeAllTickets`, sees the workspace's tickets without internal notes).
 
 ## License
 

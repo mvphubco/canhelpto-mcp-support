@@ -21,7 +21,7 @@ function api() {
 
 test("the catalogue is the same five tools for any product, two of them reads", () => {
   assert.deepEqual(supportTools("Gigi").map((t) => t.name), [...SUPPORT_TOOL_NAMES]);
-  assert.deepEqual([...SUPPORT_READ_ONLY], ["support_ask", "support_ticket_status"]);
+  assert.deepEqual([...SUPPORT_READ_ONLY], ["support_ask", "support_ticket_status", "support_list_tickets"]);
   assert.match(supportTools("DevStaff.ai").find((t) => t.name === "support_open_ticket")!.description, /DevStaff\.ai team/);
 });
 

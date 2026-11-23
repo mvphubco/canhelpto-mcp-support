@@ -12,7 +12,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
  * registers supportTools(product) and hands each call to engine.call(). Both
  * paths run the same engine, so every app gets the same five tools:
  * support_ask, support_open_ticket, support_ticket_status,
- * support_reply_to_ticket and support_set_ticket_status.
+ * support_reply_to_ticket and support_set_ticket_status. A host that passes
+ * canSeeAllTickets also gets support_list_tickets for its team: those accounts
+ * list, read, answer and reopen every ticket of the workspace.
  */
 
 export interface SupportAccount { id: string; name?: string | null; email?: string | null; [key: string]: unknown }
@@ -38,6 +40,14 @@ export interface SupportEngineOptions<A extends SupportAccount = SupportAccount>
   page?: string;
   /** Calls kept per user for the ticket's context. Default 12. */
   keep?: number;
+  /**
+   * True for an account of your own team (an admin): it lists every ticket of the
+   * workspace (support_list_tickets) and reads, answers and reopens any of them.
+   * Its reply on someone else's ticket is written as a team reply under its own
+   * name, never as the ticket's customer. Default: nobody, each user sees only
+   * their own tickets.
+   */
+  canSeeAllTickets?: (account: A) => boolean;
   /** Default https://canhelpto.com */
   baseUrl?: string;
   fetch?: typeof fetch;
@@ -50,10 +60,14 @@ export interface SupportOptions<A extends SupportAccount = SupportAccount> exten
   client?: (extra: unknown) => SupportClient | undefined;
 }
 
+/** The tools every user gets. */
 export const SUPPORT_TOOL_NAMES = ["support_ask", "support_open_ticket", "support_ticket_status", "support_reply_to_ticket", "support_set_ticket_status"] as const;
-export type SupportToolName = (typeof SUPPORT_TOOL_NAMES)[number];
-export const isSupportTool = (name: string): name is SupportToolName => (SUPPORT_TOOL_NAMES as readonly string[]).includes(name);
-export const SUPPORT_READ_ONLY: ReadonlySet<SupportToolName> = new Set(["support_ask", "support_ticket_status"]);
+/** The tools only accounts with canSeeAllTickets get (register them for those accounts only). */
+export const SUPPORT_TEAM_TOOL_NAMES = ["support_list_tickets"] as const;
+export type SupportToolName = (typeof SUPPORT_TOOL_NAMES)[number] | (typeof SUPPORT_TEAM_TOOL_NAMES)[number];
+const ALL_TOOL_NAMES: readonly SupportToolName[] = [...SUPPORT_TOOL_NAMES, ...SUPPORT_TEAM_TOOL_NAMES];
+export const isSupportTool = (name: string): name is SupportToolName => (ALL_TOOL_NAMES as readonly string[]).includes(name);
+export const SUPPORT_READ_ONLY: ReadonlySet<SupportToolName> = new Set(["support_ask", "support_ticket_status", "support_list_tickets"]);
 
 // Typed loosely on purpose: zod is a peer dependency (v3 or v4, the app's own
 // instance), and its types differ between majors.
@@ -74,20 +88,34 @@ export const supportInputShapes: Record<SupportToolName, Record<string, any>> = 
     ticketId: z.string().min(1).max(64),
     status: z.enum(["OPEN", "CLOSED"]).describe("CLOSED when the problem is solved; OPEN when it is back"),
   },
+  support_list_tickets: {
+    status: z.enum(["active", "OPEN", "IN_PROGRESS", "RESOLVED", "all"]).default("active").describe("active = OPEN and IN_PROGRESS (default); all = every status"),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    limit: z.number().int().min(1).max(50).default(20),
+  },
 };
 
 export interface SupportToolInfo { name: SupportToolName; title: string; description: string; inputSchema: Record<string, any>; readOnly: boolean }
 
-export function supportTools(product: string): SupportToolInfo[] {
+/** The five tools every user gets; with { team: true } also the team tools (for accounts with canSeeAllTickets). */
+export function supportTools(product: string, opts: { team?: boolean } = {}): SupportToolInfo[] {
+  const team = opts.team ? ` As a member of the ${product} team you can also do this on any ticket of the team (support_list_tickets lists them); there the message is posted as a team reply under your name.` : "";
   const t: Record<SupportToolName, [string, string]> = {
     support_ask: [`Ask ${product} support`, `Help with ${product} itself (a tool that failed, limits, account, how-to). Answers from what the ${product} team wrote and lists the account's recent errors; if it has no answer it says so and points to support_open_ticket. Call it before support_open_ticket.`],
     support_open_ticket: [`Open a ticket with ${product}`, `Open a support ticket with the ${product} team. The account, the client and the last tool calls (with their errors) are attached, so do not paste them. Confirm the subject and message with the user first. The answer comes back by email and through support_ticket_status.`],
-    support_ticket_status: [`${product} ticket status`, `Status and the team's replies on your ${product} support tickets. Without a ticketId, lists your recent tickets.`],
-    support_reply_to_ticket: [`Reply on a ${product} ticket`, `Add the user's message to one of their own ${product} support tickets: an answer to the team's question, or more details. A reply on a resolved or closed ticket reopens it. Confirm the text with the user first.`],
-    support_set_ticket_status: [`Close or reopen a ${product} ticket`, `Close one of the user's own ${product} support tickets when the problem is solved (CLOSED), or reopen it when it is back (OPEN). Confirm with the user first.`],
+    support_ticket_status: [`${product} ticket status`, `Status and the team's replies on your ${product} support tickets. Without a ticketId, lists your recent tickets.${opts.team ? ` As a member of the ${product} team you can read any ticket of the team by its id (internal notes are not shown).` : ""}`],
+    support_reply_to_ticket: [`Reply on a ${product} ticket`, `Add the user's message to one of their own ${product} support tickets: an answer to the team's question, or more details. A reply on a resolved or closed ticket reopens it.${team} Confirm the text with the user first.`],
+    support_set_ticket_status: [`Close or reopen a ${product} ticket`, `Close one of the user's own ${product} support tickets when the problem is solved (CLOSED), or reopen it when it is back (OPEN).${team} Confirm with the user first.`],
+    support_list_tickets: [`List the ${product} team's tickets`, `For the ${product} team: every support ticket of the workspace, not only your own, newest first, with status, priority, who it is from and the number of replies. Filter by status (default: active, meaning OPEN and IN_PROGRESS) and priority. Read one with support_ticket_status; answer it with support_reply_to_ticket.`],
   };
-  return SUPPORT_TOOL_NAMES.map((name) => ({ name, title: t[name][0], description: t[name][1], inputSchema: supportInputShapes[name], readOnly: SUPPORT_READ_ONLY.has(name) }));
+  const names: readonly SupportToolName[] = opts.team ? ALL_TOOL_NAMES : SUPPORT_TOOL_NAMES;
+  return names.map((name) => ({ name, title: t[name][0], description: t[name][1], inputSchema: supportInputShapes[name], readOnly: SUPPORT_READ_ONLY.has(name) }));
 }
+
+/** The first line of a team member's reply on someone else's ticket: the API has no author field, so the author is in the text. */
+export const teamAuthorLine = (product: string, a: { name?: string | null; email?: string | null }) =>
+  `From ${[a.name?.trim() || null, a.email ? `(${a.email})` : null].filter(Boolean).join(" ") || "a team member"}, ${product} team:`;
+const AUTHOR_LINE = /^From (.+?), [^\n]+ team:\n+/;
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "server";
 
@@ -132,7 +160,7 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
   const keep = opts.keep ?? 12;
   const recent = new Map<string, RecentCall[]>();
   const product = opts.product;
-  const parsers = Object.fromEntries(SUPPORT_TOOL_NAMES.map((n) => [n, z.object(supportInputShapes[n])])) as unknown as Record<SupportToolName, { parse: (v: unknown) => any }>;
+  const parsers = Object.fromEntries(ALL_TOOL_NAMES.map((n) => [n, z.object(supportInputShapes[n])])) as unknown as Record<SupportToolName, { parse: (v: unknown) => any }>;
 
   const record = (userId: string, c: RecentCall) => {
     if (isSupportTool(c.tool)) return;
@@ -145,22 +173,31 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
   // Customer-mode calls: never X-Service-Mode, so internal notes stay out and a
   // reply counts as the customer's (it reopens a closed ticket, notifies the team).
   // With the service key canhelpto needs no email code from the customer.
-  const headers = { "X-API-Key": opts.apiKey, "User-Agent": "canhelpto-mcp-support/0.3" };
+  const headers = { "X-API-Key": opts.apiKey, "User-Agent": "canhelpto-mcp-support/0.4" };
   const mine = (t: any, u: A) => {
     const byId = t?.metadata?.mcp?.account?.userId;
     if (byId) return byId === u.id;
     const email = String(t?.customerEmail ?? "").trim().toLowerCase();
     return !!email && !!u.email && email === u.email.trim().toLowerCase();
   };
-  const ownTicket = async (ticketId: string, u: A): Promise<any | null> => {
+  const team = (u: A) => opts.canSeeAllTickets?.(u) === true;
+  // Read in customer mode either way, so internal notes never reach the chat.
+  // `own` tells which path a write takes: the customer's, or a team reply.
+  const ticketFor = async (ticketId: string, u: A): Promise<{ t: any; own: boolean } | null> => {
     const r = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}`, { headers });
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`The support desk answered ${r.status}. Try again in a minute.`);
     const raw: any = await r.json();
     const t = raw?.ticket ?? raw;
-    return mine(t, u) ? t : null;
+    if (mine(t, u)) return { t, own: true };
+    return team(u) ? { t, own: false } : null;
   };
-  const notFound = (id: string) => fail(`Ticket ${id} was not found on your account.`);
+  const notFound = (id: string, u: A) => fail(team(u) ? `Ticket ${id} was not found in the ${product} workspace.` : `Ticket ${id} was not found on your account.`);
+  // Team-mode writes: service mode, so nothing is written as the customer.
+  const svc = { ...headers, "X-Service-Mode": "true", "Content-Type": "application/json" };
+  const setStatusAsTeam = (ticketId: string, status: "OPEN" | "CLOSED") =>
+    doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}`, { method: "PATCH", headers: svc, body: JSON.stringify({ status }) });
+  const customerOf = (t: any) => [t.customerName, t.customerEmail && `<${t.customerEmail}>`].filter(Boolean).join(" ") || "unknown";
   const withoutContext = (m: string) => String(m ?? "").split(/\n\n-{1,3} Connector context/)[0];
 
   const handlers: Record<SupportToolName, (input: any, u: A, client: SupportClient) => Promise<SupportResult>> = {
@@ -202,10 +239,19 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
     async support_ticket_status({ ticketId }, u) {
       const show = (t: any) => `${t.id} · ${t.status} · ${t.summary ?? withoutContext(t.message).slice(0, 80)}`;
       if (ticketId) {
-        const t = await ownTicket(ticketId, u);
-        if (!t) return notFound(ticketId);
-        const replies = (t.replies ?? []).filter((x: any) => !x.isInternal).map((x: any) => `- ${x.userId ? `${product} team` : x.isAI ? "automatic" : "you"}: ${x.message}`);
-        return ok([show(t), replies.length ? `Replies:\n${replies.join("\n")}` : "No reply from the team yet."].join("\n"));
+        const found = await ticketFor(ticketId, u);
+        if (!found) return notFound(ticketId, u);
+        const { t, own } = found;
+        const who = (x: any) => {
+          if (x.userId) return `${product} team`;
+          if (x.isAI) return "automatic";
+          const author = String(x.message ?? "").match(AUTHOR_LINE)?.[1];
+          if (author) return author;
+          return own ? "you" : `customer ${customerOf(t)}`;
+        };
+        const replies = (t.replies ?? []).filter((x: any) => !x.isInternal).map((x: any) => `- ${who(x)}: ${String(x.message ?? "").replace(AUTHOR_LINE, "")}`);
+        const head = own ? [show(t)] : [show(t), `From: ${customerOf(t)} · priority ${t.priority ?? "?"}`, `Message: ${withoutContext(t.message).slice(0, 1500)}`];
+        return ok([...head, replies.length ? `Replies:\n${replies.join("\n")}` : "No reply from the team yet."].join("\n"));
       }
       if (!u.email) return fail("Give a ticketId: your account has no email to list tickets by.");
       const r = await doFetch(`${base}/api/v1/tickets?email=${encodeURIComponent(u.email)}&limit=10`, { headers });
@@ -215,8 +261,23 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
     },
 
     async support_reply_to_ticket({ ticketId, message }, u) {
-      const t = await ownTicket(ticketId, u);
-      if (!t) return notFound(ticketId);
+      const found = await ticketFor(ticketId, u);
+      if (!found) return notFound(ticketId, u);
+      const { t, own } = found;
+      const reopened = t.status === "RESOLVED" || t.status === "CLOSED";
+      if (!own) {
+        const res = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}/replies`, {
+          method: "POST",
+          headers: svc,
+          body: JSON.stringify({ message: `${teamAuthorLine(product, u)}\n\n${message.trim()}`, isInternal: false }),
+        });
+        if (!res.ok) return fail(`The reply could not be added (HTTP ${res.status}). Try again in a minute.`);
+        if (reopened) {
+          const r2 = await setStatusAsTeam(ticketId, "OPEN");
+          if (!r2.ok) return ok(`Added to ticket ${ticketId} as ${u.name || u.email || "you"}, but it could not be reopened (HTTP ${r2.status}).`);
+        }
+        return ok(`Added to ticket ${ticketId} as a team reply from ${u.name || u.email || "you"}; it shows on the ticket in the inbox and to its customer. No email is sent.${reopened ? " The ticket is open again." : ""}`);
+      }
       // canhelpto checks the customer email against the ticket on this route.
       if (!t.customerEmail) return fail(`Ticket ${ticketId} has no email on it, so it cannot be answered from here; open a new ticket instead.`);
       const res = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}/replies`, {
@@ -225,13 +286,18 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
         body: JSON.stringify({ email: t.customerEmail, message: message.trim() }),
       });
       if (!res.ok) return fail(`The reply could not be added (HTTP ${res.status}). Try again in a minute.`);
-      const reopened = t.status === "RESOLVED" || t.status === "CLOSED";
       return ok(`Added to ticket ${ticketId}; the ${product} team is notified.${reopened ? " The ticket is open again." : ""}`);
     },
 
     async support_set_ticket_status({ ticketId, status }, u) {
-      const t = await ownTicket(ticketId, u);
-      if (!t) return notFound(ticketId);
+      const found = await ticketFor(ticketId, u);
+      if (!found) return notFound(ticketId, u);
+      const { t, own } = found;
+      if (!own) {
+        const res = await setStatusAsTeam(ticketId, status);
+        if (!res.ok) return fail(`The ticket could not be changed (HTTP ${res.status}). Try again in a minute.`);
+        return ok(status === "CLOSED" ? `Ticket ${ticketId} is closed.` : `Ticket ${ticketId} is open again in the ${product} inbox.`);
+      }
       if (!t.customerEmail) return fail(`Ticket ${ticketId} has no email on it, so it cannot be changed from here.`);
       const res = await doFetch(`${base}/api/v1/tickets/${encodeURIComponent(ticketId)}/status`, {
         method: "PATCH",
@@ -240,6 +306,28 @@ export function createSupport<A extends SupportAccount>(opts: SupportEngineOptio
       });
       if (!res.ok) return fail(`The ticket could not be changed (HTTP ${res.status}). Try again in a minute.`);
       return ok(status === "CLOSED" ? `Ticket ${ticketId} is closed.` : `Ticket ${ticketId} is open again; the ${product} team sees it in the inbox.`);
+    },
+
+    async support_list_tickets({ status, priority, limit }, u) {
+      if (!team(u)) return fail(`Listing every ticket is for the ${product} team. support_ticket_status lists your own tickets.`);
+      const statuses: (string | null)[] = status === "active" ? ["OPEN", "IN_PROGRESS"] : status === "all" ? [null] : [status];
+      const all: any[] = [];
+      for (const s of statuses) {
+        const q = new URLSearchParams({ limit: String(limit) });
+        if (s) q.set("status", s);
+        if (priority) q.set("priority", priority);
+        // Service mode is the only way to list the workspace; replies are reduced to a
+        // count of the public ones, so internal notes never reach the chat.
+        const r = await doFetch(`${base}/api/v1/tickets?${q}`, { headers: { ...headers, "X-Service-Mode": "true" } });
+        if (!r.ok) return fail(`The support desk answered ${r.status}. Try again in a minute.`);
+        all.push(...(((await r.json()) as { tickets?: any[] }).tickets ?? []));
+      }
+      const rows = all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, limit);
+      if (!rows.length) return ok(`No ${status === "all" ? "" : status === "active" ? "open " : `${status} `}tickets in the ${product} workspace${priority ? ` at priority ${priority}` : ""}.`);
+      return ok(rows.map((t) => {
+        const replies = (t.replies ?? []).filter((x: any) => !x.isInternal).length;
+        return `${t.id} · ${t.status} · ${t.priority} · ${t.summary ?? withoutContext(t.message).slice(0, 80)} · from ${customerOf(t)} · ${String(t.createdAt ?? "").slice(0, 10)} · ${replies} repl${replies === 1 ? "y" : "ies"}`;
+      }).join("\n"));
     },
   };
 
@@ -304,7 +392,9 @@ export function withSupport<A extends SupportAccount>(server: McpServer, opts: S
     });
   };
 
-  for (const tool of supportTools(opts.product)) {
+  // withSupport registers one catalogue for every caller, so the team tool is there
+  // only when the host passes canSeeAllTickets; the engine still refuses others.
+  for (const tool of supportTools(opts.product, { team: !!opts.canSeeAllTickets })) {
     original(tool.name, {
       title: tool.title,
       description: tool.description,
